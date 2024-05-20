@@ -1,5 +1,11 @@
 import json
 from datetime import datetime
+import os
+
+
+def get_data_folder_path(folder_name: str = 'data'):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(current_dir, '..', folder_name))
 
 
 class SaveToJson:
@@ -9,7 +15,7 @@ class SaveToJson:
     def save_prices(self, prices: dict, create_backup: bool = True):
         existing_data = self.read_prices()
         if create_backup:
-            with open(f'{self.file_name}_backup.json', 'w') as json_file:
+            with open(f'{get_data_folder_path()}/{self.file_name}_backup.json', 'w') as json_file:
                 json.dump(existing_data, json_file)
 
         current_datetime = datetime.now()
@@ -20,12 +26,12 @@ class SaveToJson:
         }
         existing_data.append(new_data)
 
-        with open(f'{self.file_name}.json', 'w') as json_file:
+        with open(f'{get_data_folder_path()}/{self.file_name}.json', 'w') as json_file:
             json.dump(existing_data, json_file)
 
     def read_prices(self) -> list:
         try:
-            with open(f'{self.file_name}.json', 'r') as file:
+            with open(f'{get_data_folder_path()}/{self.file_name}.json', 'r') as file:
                 existing_data = json.load(file)
             return existing_data
         except FileNotFoundError:

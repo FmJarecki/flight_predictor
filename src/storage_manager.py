@@ -1,11 +1,16 @@
 import json
 from datetime import datetime
 import os
+import pandas as pd
 
 
 def get_data_folder_path(folder_name: str = 'data'):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.abspath(os.path.join(current_dir, '..', folder_name))
+
+
+def remove_spaces_and_convert(val: str) -> float:
+    return float(val.replace(' ', ''))
 
 
 class JsonHandler:
@@ -15,29 +20,36 @@ class JsonHandler:
     def save_prices(self, prices: dict, create_backup: bool = True):
         existing_data = self.read_prices()
         if create_backup:
-            with open(f'{get_data_folder_path()}/{self.file_name}_backup.json', 'w') as json_file:
-                json.dump(existing_data, json_file)
+            existing_data.to_json(f'{get_data_folder_path()}/{self.file_name}_backup.json',
+                                  orient='records',
+                                  lines=True)
 
-        current_datetime = datetime.now()
-        new_data = {
-            'day': current_datetime.strftime('%Y-%m-%d'),
-            'time': current_datetime.strftime('%H:%M:%S'),
-            'prices': prices
-        }
-        existing_data.append(new_data)
+        new_rows = []
+        day = datetime.now().strftime('%d-%m-%Y')
+        for flight_date, price in prices.items():
+            new_rows.append({"day": day, "flight_date": flight_date, "price": remove_spaces_and_convert(price)})
+        new_df = pd.DataFrame(new_rows)
+        new_df["day"] = new_df["day"]
+        new_df["flight_date"] = new_df["flight_date"]
 
-        with open(f'{get_data_folder_path()}/{self.file_name}.json', 'w') as json_file:
-            json.dump(existing_data, json_file)
+        df = pd.concat([existing_data, new_df], ignore_index=True)
 
-    def read_prices(self) -> list:
+        df.to_json(f'{get_data_folder_path()}/{self.file_name}.json', orient='records', lines=True)
+
+    def read_prices(self) -> pd.DataFrame:
         try:
             with open(f'{get_data_folder_path()}/{self.file_name}.json', 'r') as file:
-                existing_data = json.load(file)
-            return existing_data
+                data_list = [json.loads(line) for line in file]
+
+                df = pd.DataFrame(data_list)
+                df['day'] = df['day']
+                df['flight_date'] = df['flight_date']
+                return df
+
         except FileNotFoundError:
             print('File not found.')
-            return []
+            return pd.DataFrame([])
         except json.decoder.JSONDecodeError:
             print('File was empty.')
-            return []
+            return pd.DataFrame([])
 

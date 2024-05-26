@@ -92,17 +92,16 @@ class RyanairWrapper(BrowserFetcher):
 
     def _get_prices(self, month: int, year: int, end_at: int = 31) -> dict:
         days_fd = self.driver.find_elements('xpath',
-                                            '//priced-date[@class="priced-calendar-body__priced-date ng-star-inserted"]'
+                                            '//priced-date[contains(@class, "priced-calendar-body__priced-date")]'
                                             )
-
         days = {}
         for day_fd in days_fd:
             day_info = day_fd.text.split("\n")
             if len(day_info) == 2:
                 if month > 9:
-                    days[f'{year}-{month}-{day_info[0]}'] = day_info[1]
+                    days[f'{day_info[0]}-{month}-{year}'] = day_info[1]
                 else:
-                    days[f'{year}-0{month}-{day_info[0]}'] = day_info[1]
+                    days[f'{day_info[0]}-0{month}-{year}'] = day_info[1]
                 if int(day_info[0]) >= end_at:
                     return days
         return days

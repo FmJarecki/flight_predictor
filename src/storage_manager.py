@@ -8,7 +8,7 @@ def get_data_folder_path(folder_name: str = 'data'):
     return os.path.abspath(os.path.join(current_dir, '..', folder_name))
 
 
-class SaveToJson:
+class JsonHandler:
     def __init__(self, file_name: str):
         self.file_name = file_name
 

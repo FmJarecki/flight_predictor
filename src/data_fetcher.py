@@ -6,6 +6,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import NoSuchElementException
 import time
 from datetime import datetime
+import calendar
 
 
 def get_current_date() -> (int, int, int):
@@ -62,7 +63,7 @@ class RyanairWrapper(BrowserFetcher):
 
         self._set_arrival_airport(flight_data.arrival_airport)
 
-        if not self._set_date(flight_data.month):
+        if not self._set_date(flight_data.month, flight_data.last_day, str(year)[2:]):
             return {}
 
         self.driver.find_element('xpath', "//*[@aria-label='Szukaj']").click()
@@ -119,7 +120,7 @@ class RyanairWrapper(BrowserFetcher):
         destination_fd.send_keys(Keys.ENTER)
         time.sleep(0.5)
 
-    def _set_date(self, month: str) -> bool:
+    def _set_date(self, month: str, last_day: str, year_suffix: str) -> bool:
         try:
             destination_date_bt = self.driver.find_element('xpath', '//*[@id="ry-tooltip-11"]')
         except NoSuchElementException:
@@ -127,8 +128,8 @@ class RyanairWrapper(BrowserFetcher):
             return False
         destination_date_bt.find_element('xpath', "//*[contains(text(),'Elastyczne daty')]").click()
         try:
-            destination_date_bt.find_element('xpath', f"//*[contains(text(),'{month} 24')]").click()
-            destination_date_bt.find_element('xpath', "//*[contains(text(),'Pon.')]").click()
+            destination_date_bt.find_element('xpath', f"//*[contains(text(),'{month} {year_suffix}')]").click()
+            destination_date_bt.find_element('xpath', f"//*[contains(text(),'{last_day}')]").click()
             destination_date_bt.find_element('xpath', "//*[@aria-label='Zastosuj']").click()
         except NoSuchElementException:
             print('Please check month correctness.')
@@ -147,6 +148,7 @@ class FlightData:
         self.arrival_airport = arrival_airport
         self.month = month
         self.day = day
+        self.last_day = month
 
     @property
     def departure_airport(self) -> str:
@@ -191,8 +193,29 @@ class FlightData:
 
     @property
     def day(self) -> str:
-        return self.day
+        return self._day
 
     @day.setter
     def day(self, value: int):
         self._day = str(value)
+
+    @property
+    def last_day(self) -> str:
+        return self._last_day
+
+    @last_day.setter
+    def last_day(self, month: int):
+        year = datetime.now().year
+        last_day = calendar.monthrange(year, month)[1]
+        day_of_the_week = datetime(year, month, last_day).strftime('%A')
+        days_dist = {
+            'Monday': 'Pon.',
+            'Tuesday': 'Wt.',
+            'Wednesday': 'Śr.',
+            'Thursday': 'Czw.',
+            'Friday': 'Pt.',
+            'Saturday': 'Sob.',
+            'Sunday': 'Niedz.'
+        }
+        day_of_the_week_fixed = days_dist[day_of_the_week]
+        self._last_day = day_of_the_week_fixed

@@ -77,21 +77,25 @@ class RyanairWrapper(BrowserFetcher):
 
         month = increment_month(month)
         next_month_fd.click()
+        time.sleep(0.1)
         days.update(self._get_prices(month, year))
         time.sleep(0.1)
 
         month = increment_month(month)
         next_month_fd.click()
+        time.sleep(0.1)
         days.update(self._get_prices(month, year))
         time.sleep(0.1)
 
         month = increment_month(month)
         next_month_fd.click()
+        time.sleep(0.1)
         days.update(self._get_prices(month, year, day))
 
         return days
 
     def _get_prices(self, month: int, year: int, end_at: int = 31) -> dict:
+
         days_fd = self.driver.find_elements('xpath',
                                             '//priced-date[contains(@class, "priced-calendar-body__priced-date")]'
                                             )
@@ -104,7 +108,12 @@ class RyanairWrapper(BrowserFetcher):
                 else:
                     days[f'{day_info[0]}-0{month}-{year}'] = day_info[1]
                 if int(day_info[0]) >= end_at:
+                    if len(days) != end_at:
+                        print(f'No flights were collected for each day in {month}.')
                     return days
+
+        if len(days) < 30:
+            print(f'No flights were collected for each day in {month}.')
         return days
 
     def _set_departure_airport(self, airport: str):

@@ -1,74 +1,89 @@
-from sklearn.preprocessing import MinMaxScaler
+import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.optimizers import Adam
-import pandas as pd
 
 
 class LTSMTicketPricePredictor:
-    def __init__(self, data: pd.DataFrame):
-        self._x_train, self._x_test, self._y_train, self._y_test = [], [], [], []
+    def __init__(self, data: pd.DataFrame, seq_len: int = 5):
+        self._sequence_length = seq_len
+        self._scaler = StandardScaler()
+        self._x_train, self._x_test = np.array([]), np.array([]),
+        self._y_train, self._y_test = np.array([]), np.array([])
         self._model = Sequential()
         pd_lstm_data = self.fetch_data(data)
         self.prepare_data(pd_lstm_data)
         self.build_model()
 
-    def predict(self, x_test):
-        y_pred = self._model.predict(x_test)
-        y_pred = (y_pred > 0.5).astype(int)
-        return y_pred
+    def predict(self, day: int, prices_before: list):
+        days_until_flight = [i for i in range(day, day+5)]
+
+        new_data = np.column_stack((prices_before, days_until_flight))
+        new_data = self._scaler.transform(new_data)
+
+        new_sequence = new_data.reshape((1, self._sequence_length, self._x_train.shape[2]))
+
+        prediction = self._model.predict(new_sequence)
+
+        price_movement = 'up' if prediction[0][0] > 0.5 else 'down'
+        print(f'Ticket price for {day} days will go {price_movement}.')
+
+    def evaluate(self):
+        loss, accuracy = self._model.evaluate(self._x_test, self._y_test)
+        print(f'Accuracy: {accuracy * 100:.2f}%')
 
     def train(self):
-        history = self._model.fit(self._x_train,
-                                  self._y_train,
-                                  epochs=30,
-                                  batch_size=1,
-                                  validation_data=(self._x_test, self._y_test))
+        history = self._model.fit(self._x_train, self._y_train, epochs=50, validation_split=0.2, batch_size=2)
 
     def build_model(self):
         self._model = Sequential([
-            LSTM(100, activation='tanh', input_shape=(1, 1)),
+            LSTM(50, return_sequences=True, input_shape=(self._x_train.shape[1], self._x_train.shape[2])),
+            LSTM(50),
             Dense(1, activation='sigmoid')
         ])
-        self._model.compile(optimizer=Adam(learning_rate=0.001), loss='binary_crossentropy', metrics=['accuracy'])
 
-    def prepare_data(self, data: pd.DataFrame):
-        scaler = MinMaxScaler()
-        x = scaler.fit_transform(data['days_to_flight'].values.reshape(-1, 1))
-        x = x.reshape((x.shape[0], 1, x.shape[1]))
-        y = data['prices_increased'].values.reshape(-1, 1)
-        self._x_train, self._x_test, self._y_train, self._y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+        self._model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    def prepare_data(self, df: pd.DataFrame):
+
+        def create_sequences(data: np.array):
+            x_data, y_data = [], []
+            for i in range(len(data) - self._sequence_length):
+                x_data.append(data[i:i + self._sequence_length, :-1])
+                y_data.append(data[i + self._sequence_length, -1])
+            return np.array(x_data), np.array(y_data)
+
+        x, y = create_sequences(df.values)
+
+        self._x_train, self._x_test, self._y_train, self._y_test = train_test_split(x,
+                                                                                    y,
+                                                                                    test_size=0.2,
+                                                                                    random_state=42)
 
     # Changes the data read from json to the input for LSTM
-    @staticmethod
-    def fetch_data(data: pd.DataFrame) -> pd.DataFrame:
-        data['day'] = pd.to_datetime(data['day'], format='%d-%m-%Y')
-        data['flight_date'] = pd.to_datetime(data['flight_date'], format='%d-%m-%Y')
+    def fetch_data(self, df: pd.DataFrame) -> pd.DataFrame:
+        # Convert dates to datetime objects
+        df['day'] = pd.to_datetime(df['day'], format='%d-%m-%Y')
+        df['flight_date'] = pd.to_datetime(df['flight_date'], format='%d-%m-%Y')
 
-        lstm_data = pd.DataFrame(columns=['days_to_flight', 'prices_increased'])
+        # Calculate the number of days from 'day' to 'flight_date'
+        df['days_until_flight'] = (df['flight_date'] - df['day']).dt.days
 
-        last_price = None
-        last_day = data.iloc[0]['flight_date']
-        for index, row in data.iterrows():
-            current_day = row['flight_date']
-            current_price = row['price']
+        # Shift the price column to get the next day's price
+        df['next_day_price'] = df['price'].shift(-1)
 
-            if current_day != last_day:
-                price_increase = current_price - last_price
-                if price_increase > 0:
-                    price_increased = 1.0
-                else:
-                    price_increased = 0.0
+        # Remove rows where we don't have the next day's price
+        df = df.dropna()
 
-                day_to_flight = abs(pd.to_datetime(row['day'], format='%d-%m-%Y') -
-                                    pd.to_datetime(current_day, format='%d-%m-%Y'))
+        # Determine if the price will go up (1) or down (0)
+        df = df.assign(price_direction=(df['next_day_price'] > df['price']).astype(int))
 
-                new_row = {'days_to_flight': day_to_flight.days,
-                           'prices_increased': price_increased}
-                lstm_data = pd.concat([lstm_data, pd.DataFrame([new_row])], ignore_index=True)
+        # Select relevant columns
+        df = df[['price', 'days_until_flight', 'price_direction']]
 
-            last_price = current_price
-            last_day = current_day
+        # Normalize the features
+        df[['price', 'days_until_flight']] = self._scaler.fit_transform(df[['price', 'days_until_flight']])
 
-        return lstm_data
+        return df

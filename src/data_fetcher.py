@@ -21,6 +21,16 @@ def increment_month(month: int) -> int:
     return month
 
 
+def get_num_of_days(month: int, year: int):
+
+    days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+    if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0):
+        days_in_month[1] = 29
+
+    return days_in_month[month - 1]
+
+
 class BrowserFetcher:
     def __init__(self, close_after_usage: bool = True):
         options = Options()
@@ -39,31 +49,31 @@ class BrowserFetcher:
 
 
 class RyanairWrapper(BrowserFetcher):
-    def __init__(self):
+    def __init__(self, departure_airport: str, arrival_airport: str):
         super().__init__()
         self._url = 'https://www.ryanair.com/pl/pl'
+        self._flight_data = FlightData(departure_airport, arrival_airport)
 
     # Four months ahead
-    def get_flight_prices(self,
-                          departure_airport: str,
-                          arrival_airport: str) -> dict:
-
-        day, month, year = get_current_date()
-
-        flight_data = FlightData(departure_airport, arrival_airport, month, day)
-
+    def open_ryanair_page(self):
         self.driver.get(self._url)
         time.sleep(1.0)
 
         self.driver.find_element('xpath', '//*[@id="cookie-popup-with-overlay"]/div/div[3]/button[3]').click()
-
         self.driver.find_element('xpath', "//*[contains(text(),'jedną stronę')]").click()
 
-        self._set_departure_airport(flight_data.departure_airport)
+        self._set_departure_airport(self._flight_data.departure_airport)
 
-        self._set_arrival_airport(flight_data.arrival_airport)
+        self._set_arrival_airport(self._flight_data.arrival_airport)
 
-        if not self._set_date(flight_data.month, flight_data.last_day, str(year)[2:]):
+    def get_flight_prices(self, number_of_days: int) -> dict:
+        month = self._flight_data.month  # local variable, because month will be incremented
+
+        self.open_ryanair_page()
+
+        if not self._set_elastic_date(self._flight_data.month_name,
+                                      self._flight_data.last_day,
+                                      str(self._flight_data.year)[2:]):
             return {}
 
         self.driver.find_element('xpath', "//*[@aria-label='Szukaj']").click()
@@ -72,25 +82,19 @@ class RyanairWrapper(BrowserFetcher):
         next_month_fd = self.driver.find_element('xpath',
                                                  '//icon[@class="month-selector__'
                                                  'arrow month-selector__arrow--next-month"]')
-        days.update(self._get_prices(month, year))
-        time.sleep(0.1)
+        days_in_month = get_num_of_days(month, self._flight_data.year)
+        days.update(self._get_prices(month, self._flight_data.year, min(days_in_month, number_of_days)))
+        number_of_days -= (get_num_of_days(month, self._flight_data.year) - self._flight_data.day)
+        time.sleep(0.25)
 
-        month = increment_month(month)
-        next_month_fd.click()
-        time.sleep(0.1)
-        days.update(self._get_prices(month, year))
-        time.sleep(0.1)
-
-        month = increment_month(month)
-        next_month_fd.click()
-        time.sleep(0.1)
-        days.update(self._get_prices(month, year))
-        time.sleep(0.1)
-
-        month = increment_month(month)
-        next_month_fd.click()
-        time.sleep(0.1)
-        days.update(self._get_prices(month, year, day))
+        while number_of_days > 0:
+            month = increment_month(month)
+            days_in_month = get_num_of_days(month, self._flight_data.year)
+            next_month_fd.click()
+            time.sleep(0.25)
+            days.update(self._get_prices(month, self._flight_data.year, min(days_in_month, number_of_days)))
+            time.sleep(0.25)
+            number_of_days -= days_in_month
 
         return days
 
@@ -129,7 +133,7 @@ class RyanairWrapper(BrowserFetcher):
         destination_fd.send_keys(Keys.ENTER)
         time.sleep(0.5)
 
-    def _set_date(self, month: str, last_day: str, year_suffix: str) -> bool:
+    def _set_elastic_date(self, month: str, last_day: str, year_suffix: str) -> bool:
         try:
             destination_date_bt = self.driver.find_element('xpath', '//*[@id="ry-tooltip-11"]')
         except NoSuchElementException:
@@ -149,13 +153,15 @@ class RyanairWrapper(BrowserFetcher):
 class FlightData:
     def __init__(self,
                  departure_airport: str,
-                 arrival_airport: str,
-                 month: int,
-                 day: int):
+                 arrival_airport: str):
+
+        day, month, year = get_current_date()
 
         self.departure_airport = departure_airport
         self.arrival_airport = arrival_airport
+        self.year = year
         self.month = month
+        self.month_name = month
         self.day = day
         self.last_day = month
 
@@ -176,11 +182,27 @@ class FlightData:
         self._arrival_airport = value
 
     @property
-    def month(self) -> str:
+    def year(self) -> int:
+        return self._year
+
+    @year.setter
+    def year(self, value: int):
+        self._year = value
+
+    @property
+    def month(self) -> int:
         return self._month
 
     @month.setter
     def month(self, value: int):
+        self._month = value
+
+    @property
+    def month_name(self) -> str:
+        return self._month_name
+
+    @month_name.setter
+    def month_name(self, value: int):
         months = {
             1: 'Sty',
             2: 'Lut',
@@ -196,17 +218,17 @@ class FlightData:
             12: 'Gru'
         }
         if value not in months:
-            self._month = ''
+            self._month_name = ''
         else:
-            self._month = months[value]
+            self._month_name = months[value]
 
     @property
-    def day(self) -> str:
+    def day(self) -> int:
         return self._day
 
     @day.setter
     def day(self, value: int):
-        self._day = str(value)
+        self._day = value
 
     @property
     def last_day(self) -> str:
